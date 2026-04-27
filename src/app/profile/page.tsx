@@ -1,20 +1,12 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { User, Bookmark, LogOut, BookOpen } from 'lucide-react'
+import { User, Bookmark, LogOut, BookOpen, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import PaperCard from '@/components/PaperCard'
-import { seedPapers } from '@/lib/seed-data'
 import type { Paper } from '@/lib/supabase/types'
 import Link from 'next/link'
-
-const allPapers: Paper[] = seedPapers.map((p, i) => ({
-  ...p,
-  id: String(i + 1),
-  created_at: new Date(Date.now() - i * 86400000 * 3).toISOString(),
-  updated_at: new Date(Date.now() - i * 86400000 * 3).toISOString(),
-}))
 
 export default function ProfilePage() {
   const router = useRouter()
@@ -26,21 +18,25 @@ export default function ProfilePage() {
     const supabase = createClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any
-    db.auth.getUser().then(async ({ data }: { data: { user: { id: string } | null } }) => {
+    db.auth.getUser().then(async ({ data }: { data: { user: SupabaseUser | null } }) => {
       if (!data.user) {
         router.push('/auth')
         return
       }
-      setUser(data.user as import('@supabase/supabase-js').User)
+      setUser(data.user)
 
+      // Fetch bookmarks joined with paper data
       const { data: bookmarks } = await db
         .from('bookmarks')
-        .select('paper_id')
+        .select('paper_id, papers(*)')
         .eq('user_id', data.user.id)
+        .order('created_at', { ascending: false })
 
       if (bookmarks) {
-        const ids = (bookmarks as { paper_id: string }[]).map((b) => b.paper_id)
-        setBookmarkedPapers(allPapers.filter((p) => ids.includes(p.id)))
+        const papers = (bookmarks as { papers: Paper }[])
+          .map((b) => b.papers)
+          .filter(Boolean)
+        setBookmarkedPapers(papers)
       }
       setLoading(false)
     })
@@ -48,14 +44,15 @@ export default function ProfilePage() {
 
   const handleSignOut = async () => {
     const supabase = createClient()
-    await supabase.auth.signOut()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).auth.signOut()
     router.push('/')
   }
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-16 text-center">
-        <div className="w-8 h-8 border-2 border-teal-600 border-t-transparent rounded-full animate-spin mx-auto" />
+      <div className="max-w-4xl mx-auto px-4 py-16 flex justify-center">
+        <Loader2 className="w-8 h-8 text-teal-600 animate-spin" />
       </div>
     )
   }
@@ -101,9 +98,7 @@ export default function ProfilePage() {
           <div className="text-center py-16 bg-white rounded-2xl border border-[#E8E4DC]">
             <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-3" />
             <p className="text-slate-500 font-medium">No bookmarks yet</p>
-            <p className="text-sm text-slate-400 mt-1">
-              Save papers to find them here easily.
-            </p>
+            <p className="text-sm text-slate-400 mt-1">Save papers to find them here easily.</p>
             <Link
               href="/explore"
               className="inline-block mt-4 bg-teal-600 text-white px-5 py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors"

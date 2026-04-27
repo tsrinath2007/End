@@ -1,41 +1,20 @@
 'use client'
-import { useState, useMemo, Suspense } from 'react'
+import { useState, useMemo, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Search, SlidersHorizontal, X } from 'lucide-react'
+import { Search, SlidersHorizontal, X, Loader2 } from 'lucide-react'
 import Fuse from 'fuse.js'
 import PaperCard from '@/components/PaperCard'
-import { seedPapers } from '@/lib/seed-data'
+import { createClient } from '@/lib/supabase/client'
 import type { Paper, Branch, ExamType } from '@/lib/supabase/types'
 import { cn } from '@/lib/utils'
 
-const allPapers: Paper[] = seedPapers.map((p, i) => ({
-  ...p,
-  id: String(i + 1),
-  created_at: new Date(Date.now() - i * 86400000 * 3).toISOString(),
-  updated_at: new Date(Date.now() - i * 86400000 * 3).toISOString(),
-}))
-
 const branches: Branch[] = ['CSE', 'ECE', 'MECH', 'CIVIL', 'EEE', 'IT']
 const semesters = [1, 2, 3, 4, 5, 6, 7, 8] as const
-const years = [2021, 2022, 2023, 2024]
+const years = [2021, 2022, 2023, 2024, 2025]
 const examTypes: ExamType[] = ['Mid-Sem', 'End-Sem']
 type SortOption = 'newest' | 'downloads' | 'az'
 
-const fuse = new Fuse(allPapers, {
-  keys: ['subject', 'branch', 'exam_type', 'title'],
-  threshold: 0.3,
-  includeScore: true,
-})
-
-function FilterChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: string
-  active: boolean
-  onClick: () => void
-}) {
+function FilterChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -57,6 +36,8 @@ function ExploreContent() {
   const initialSubject = searchParams.get('subject') ?? ''
   const initialSort = (searchParams.get('sort') ?? 'newest') as SortOption
 
+  const [allPapers, setAllPapers] = useState<Paper[]>([])
+  const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState(initialQ)
   const [selectedBranches, setSelectedBranches] = useState<Branch[]>([])
   const [selectedSemesters, setSelectedSemesters] = useState<number[]>([])
@@ -65,9 +46,28 @@ function ExploreContent() {
   const [sortBy, setSortBy] = useState<SortOption>(initialSort)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
+  useEffect(() => {
+    async function fetchPapers() {
+      const supabase = createClient()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from('papers')
+        .select('*')
+        .order('created_at', { ascending: false })
+      if (!error && data) setAllPapers(data as Paper[])
+      setLoading(false)
+    }
+    fetchPapers()
+  }, [])
+
   function toggle<T>(arr: T[], val: T): T[] {
     return arr.includes(val) ? arr.filter((v) => v !== val) : [...arr, val]
   }
+
+  const fuse = useMemo(() => new Fuse(allPapers, {
+    keys: ['subject', 'branch', 'exam_type', 'title'],
+    threshold: 0.3,
+  }), [allPapers])
 
   const filtered = useMemo(() => {
     let results = allPapers
@@ -79,26 +79,18 @@ function ExploreContent() {
     }
 
     if (query.trim()) {
-      results = fuse
-        .search(query.trim())
-        .map((r) => r.item)
+      results = fuse.search(query.trim()).map((r) => r.item)
     }
 
-    if (selectedBranches.length)
-      results = results.filter((p) => selectedBranches.includes(p.branch))
-    if (selectedSemesters.length)
-      results = results.filter((p) => selectedSemesters.includes(p.semester))
-    if (selectedYears.length)
-      results = results.filter((p) => selectedYears.includes(p.year))
-    if (selectedExamTypes.length)
-      results = results.filter((p) => selectedExamTypes.includes(p.exam_type))
+    if (selectedBranches.length) results = results.filter((p) => selectedBranches.includes(p.branch))
+    if (selectedSemesters.length) results = results.filter((p) => selectedSemesters.includes(p.semester))
+    if (selectedYears.length) results = results.filter((p) => selectedYears.includes(p.year))
+    if (selectedExamTypes.length) results = results.filter((p) => selectedExamTypes.includes(p.exam_type))
 
-    if (sortBy === 'downloads') results = [...results].sort((a, b) => b.download_count - a.download_count)
-    else if (sortBy === 'az') results = [...results].sort((a, b) => a.subject.localeCompare(b.subject))
-    else results = [...results].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-
-    return results
-  }, [query, selectedBranches, selectedSemesters, selectedYears, selectedExamTypes, sortBy, initialSubject])
+    if (sortBy === 'downloads') return [...results].sort((a, b) => b.download_count - a.download_count)
+    if (sortBy === 'az') return [...results].sort((a, b) => a.subject.localeCompare(b.subject))
+    return [...results].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  }, [query, selectedBranches, selectedSemesters, selectedYears, selectedExamTypes, sortBy, initialSubject, allPapers, fuse])
 
   const clearAll = () => {
     setQuery('')
@@ -108,8 +100,7 @@ function ExploreContent() {
     setSelectedExamTypes([])
   }
 
-  const hasFilters =
-    selectedBranches.length || selectedSemesters.length || selectedYears.length || selectedExamTypes.length
+  const hasFilters = selectedBranches.length || selectedSemesters.length || selectedYears.length || selectedExamTypes.length
 
   const Sidebar = () => (
     <aside className="w-full lg:w-64 flex-shrink-0">
@@ -119,7 +110,6 @@ function ExploreContent() {
             <X className="w-3 h-3" /> Clear all filters
           </button>
         ) : null}
-
         <div>
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Branch</p>
           <div className="flex flex-wrap gap-2">
@@ -128,7 +118,6 @@ function ExploreContent() {
             ))}
           </div>
         </div>
-
         <div>
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Year</p>
           <div className="flex flex-wrap gap-2">
@@ -137,7 +126,6 @@ function ExploreContent() {
             ))}
           </div>
         </div>
-
         <div>
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Semester</p>
           <div className="flex flex-wrap gap-2">
@@ -146,12 +134,11 @@ function ExploreContent() {
             ))}
           </div>
         </div>
-
         <div>
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Exam Type</p>
           <div className="flex flex-wrap gap-2">
-            {examTypes.map((e) => (
-              <FilterChip key={e} label={e} active={selectedExamTypes.includes(e)} onClick={() => setSelectedExamTypes(toggle(selectedExamTypes, e))} />
+            {examTypes.map((ex) => (
+              <FilterChip key={ex} label={ex} active={selectedExamTypes.includes(ex)} onClick={() => setSelectedExamTypes(toggle(selectedExamTypes, ex))} />
             ))}
           </div>
         </div>
@@ -164,14 +151,10 @@ function ExploreContent() {
       <h1 className="text-2xl font-bold text-[#1e2d3d] mb-6">Explore Papers</h1>
 
       <div className="flex flex-col lg:flex-row gap-6">
-        {/* Desktop sidebar */}
-        <div className="hidden lg:block">
-          <Sidebar />
-        </div>
+        <div className="hidden lg:block"><Sidebar /></div>
 
-        {/* Main content */}
         <div className="flex-1 min-w-0">
-          {/* Search + sort bar */}
+          {/* Search + sort */}
           <div className="flex flex-col sm:flex-row gap-3 mb-6">
             <div className="flex-1 flex items-center bg-white rounded-xl border border-[#E8E4DC] px-3 py-2.5 gap-2 shadow-sm">
               <Search className="w-4 h-4 text-slate-400 flex-shrink-0" />
@@ -187,15 +170,12 @@ function ExploreContent() {
                 </button>
               )}
             </div>
-
-            {/* Mobile filter toggle */}
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="lg:hidden flex items-center gap-2 bg-white rounded-xl border border-[#E8E4DC] px-3 py-2.5 text-sm font-medium text-slate-600"
             >
               <SlidersHorizontal className="w-4 h-4" /> Filters
             </button>
-
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as SortOption)}
@@ -207,33 +187,33 @@ function ExploreContent() {
             </select>
           </div>
 
-          {/* Mobile sidebar */}
-          {sidebarOpen && (
-            <div className="lg:hidden mb-6">
-              <Sidebar />
-            </div>
-          )}
+          {sidebarOpen && <div className="lg:hidden mb-6"><Sidebar /></div>}
 
-          {/* Results count */}
-          <p className="text-sm text-slate-500 mb-4">
-            {filtered.length} paper{filtered.length !== 1 ? 's' : ''} found
-          </p>
-
-          {/* Grid */}
-          {filtered.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-              {filtered.map((paper) => (
-                <PaperCard key={paper.id} paper={paper} />
-              ))}
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="w-6 h-6 text-teal-600 animate-spin" />
             </div>
           ) : (
-            <div className="text-center py-20">
-              <p className="text-4xl mb-3">📭</p>
-              <p className="text-slate-600 font-medium">No papers match your filters</p>
-              <button onClick={clearAll} className="mt-3 text-sm text-teal-600 hover:text-teal-700 font-medium">
-                Clear filters
-              </button>
-            </div>
+            <>
+              <p className="text-sm text-slate-500 mb-4">
+                {filtered.length} paper{filtered.length !== 1 ? 's' : ''} found
+              </p>
+              {filtered.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {filtered.map((paper) => (
+                    <PaperCard key={paper.id} paper={paper} />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-20">
+                  <p className="text-4xl mb-3">📭</p>
+                  <p className="text-slate-600 font-medium">No papers match your filters</p>
+                  <button onClick={clearAll} className="mt-3 text-sm text-teal-600 hover:text-teal-700 font-medium">
+                    Clear filters
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
