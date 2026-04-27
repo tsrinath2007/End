@@ -1,12 +1,115 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronRight, Home, Download, ExternalLink, Bookmark, BookmarkCheck, Loader2 } from 'lucide-react'
+import { ChevronRight, Home, Download, ExternalLink, Bookmark, BookmarkCheck, Loader2, X, FileText, Eye } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { YEAR_INFO, getSubjectCode } from '@/lib/mit-data'
 import type { Paper } from '@/lib/supabase/types'
 import { cn, examTypeBadge, branchColor } from '@/lib/utils'
+
+function PDFPreviewPanel({
+  paper,
+  onClose,
+}: {
+  paper: Paper
+  onClose: () => void
+}) {
+  const [loaded, setLoaded] = useState(false)
+  const [errored, setErrored] = useState(false)
+  // Google Docs viewer reliably renders any public PDF in an iframe
+  const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(paper.pdf_url)}&embedded=true`
+
+  return (
+    <div className="mb-8 bg-white rounded-2xl border border-teal-200 shadow-lg overflow-hidden">
+      {/* Toolbar */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-[#E8E4DC] bg-[#FAF7F2]">
+        <FileText className="w-4 h-4 text-teal-600 flex-shrink-0" />
+        <p className="text-sm font-semibold text-[#1e2d3d] flex-1 truncate">{paper.title}</p>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <a
+            href={paper.pdf_url}
+            download
+            target="_blank"
+            rel="noopener"
+            className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-slate-600 border border-[#E8E4DC] px-3 py-1.5 rounded-lg hover:border-teal-300 hover:text-teal-700 transition-colors bg-white"
+          >
+            <Download className="w-3.5 h-3.5" /> Download
+          </a>
+          <a
+            href={paper.pdf_url}
+            target="_blank"
+            rel="noopener"
+            className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-slate-600 border border-[#E8E4DC] px-3 py-1.5 rounded-lg hover:border-teal-300 hover:text-teal-700 transition-colors bg-white"
+          >
+            <ExternalLink className="w-3.5 h-3.5" /> New tab
+          </a>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-[#F0EDE8] transition-colors"
+            aria-label="Close preview"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Mobile action buttons */}
+      <div className="flex sm:hidden gap-2 px-4 py-2 border-b border-[#E8E4DC] bg-[#FAF7F2]">
+        <a
+          href={paper.pdf_url}
+          download
+          target="_blank"
+          rel="noopener"
+          className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-600 border border-[#E8E4DC] px-3 py-2 rounded-lg hover:border-teal-300 hover:text-teal-700 bg-white"
+        >
+          <Download className="w-3.5 h-3.5" /> Download
+        </a>
+        <a
+          href={paper.pdf_url}
+          target="_blank"
+          rel="noopener"
+          className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-600 border border-[#E8E4DC] px-3 py-2 rounded-lg hover:border-teal-300 hover:text-teal-700 bg-white"
+        >
+          <ExternalLink className="w-3.5 h-3.5" /> New tab
+        </a>
+      </div>
+
+      {/* PDF iframe */}
+      <div className="relative bg-slate-100" style={{ height: '72vh' }}>
+        {!loaded && !errored && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-slate-400">
+            <Loader2 className="w-7 h-7 animate-spin text-teal-500" />
+            <p className="text-sm">Loading preview…</p>
+          </div>
+        )}
+        {errored && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-slate-400 px-4 text-center">
+            <p className="text-4xl">📄</p>
+            <p className="text-sm font-medium text-slate-600">Preview unavailable</p>
+            <p className="text-xs text-slate-400">The PDF couldn&apos;t load in the viewer.</p>
+            <a
+              href={paper.pdf_url}
+              target="_blank"
+              rel="noopener"
+              className="flex items-center gap-1.5 bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors"
+            >
+              <ExternalLink className="w-4 h-4" /> Open directly
+            </a>
+          </div>
+        )}
+        <iframe
+          src={viewerUrl}
+          className={cn('w-full h-full border-0 transition-opacity duration-300', loaded ? 'opacity-100' : 'opacity-0')}
+          title={paper.title}
+          onLoad={() => setLoaded(true)}
+          onError={() => setErrored(true)}
+          allow="fullscreen"
+        />
+      </div>
+    </div>
+  )
+}
 
 export default function SubjectPapersPage() {
   const params = useParams()
@@ -22,6 +125,9 @@ export default function SubjectPapersPage() {
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
   const [bookmarked, setBookmarked] = useState<Record<string, boolean>>({})
+  const [previewPaper, setPreviewPaper] = useState<Paper | null>(null)
+
+  const previewRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const semRange = [yg * 2 - 1, yg * 2]
@@ -35,7 +141,6 @@ export default function SubjectPapersPage() {
       const uid = authData?.user?.id ?? null
       setUserId(uid)
 
-      // Fetch all papers for this branch/year/examtype, then match subject slug
       const { data } = await db
         .from('papers')
         .select('*')
@@ -45,7 +150,6 @@ export default function SubjectPapersPage() {
         .order('year', { ascending: false })
 
       if (data) {
-        // Match subject by slug
         const matched = (data as Paper[]).filter((p) => {
           const s = p.subject.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
           return s === subjectSlug
@@ -53,7 +157,6 @@ export default function SubjectPapersPage() {
         setPapers(matched)
         if (matched.length > 0) setSubject(matched[0].subject)
 
-        // Check bookmarks
         if (uid && matched.length > 0) {
           const ids = matched.map((p) => p.id)
           const { data: bms } = await db
@@ -73,6 +176,13 @@ export default function SubjectPapersPage() {
     load()
   }, [yg, branch, examType, subjectSlug])
 
+  const handleOpen = (paper: Paper) => {
+    setPreviewPaper(paper)
+    setTimeout(() => {
+      previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 50)
+  }
+
   const handleDownload = async (paper: Paper) => {
     const supabase = createClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -80,11 +190,9 @@ export default function SubjectPapersPage() {
       .from('papers')
       .update({ download_count: paper.download_count + 1 })
       .eq('id', paper.id)
-
     setPapers((prev) =>
       prev.map((p) => p.id === paper.id ? { ...p, download_count: p.download_count + 1 } : p)
     )
-
     window.open(paper.pdf_url, '_blank', 'noopener')
   }
 
@@ -120,22 +228,29 @@ export default function SubjectPapersPage() {
         <span className="text-slate-700 font-medium">{code}</span>
       </nav>
 
-      <div className="flex items-start gap-3 mb-8">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap mb-1">
-            <span className="text-2xl font-extrabold text-teal-700">{code}</span>
-            <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full border', branchColor(branch))}>
-              {branch}
-            </span>
-            <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full border', examTypeBadge(examType))}>
-              {examType}
-            </span>
-          </div>
-          <h1 className="text-lg font-semibold text-[#1e2d3d]">{subject || '...'}</h1>
-          <p className="text-sm text-slate-400 mt-0.5">{info?.label} · {info?.sems}</p>
+      {/* Subject header */}
+      <div className="mb-8">
+        <div className="flex items-center gap-2 flex-wrap mb-1">
+          <span className="text-2xl font-extrabold text-teal-700">{code}</span>
+          <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full border', branchColor(branch))}>
+            {branch}
+          </span>
+          <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full border', examTypeBadge(examType))}>
+            {examType}
+          </span>
         </div>
+        <h1 className="text-lg font-semibold text-[#1e2d3d]">{subject || '...'}</h1>
+        <p className="text-sm text-slate-400 mt-0.5">{info?.label} · {info?.sems}</p>
       </div>
 
+      {/* PDF Preview Panel — anchored here */}
+      <div ref={previewRef}>
+        {previewPaper && (
+          <PDFPreviewPanel paper={previewPaper} onClose={() => setPreviewPaper(null)} />
+        )}
+      </div>
+
+      {/* Paper list */}
       {loading ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="w-6 h-6 text-teal-600 animate-spin" />
@@ -150,16 +265,23 @@ export default function SubjectPapersPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          <p className="text-xs text-slate-400 font-medium mb-4">{papers.length} paper{papers.length !== 1 ? 's' : ''} available</p>
+          <p className="text-xs text-slate-400 font-medium mb-4">
+            {papers.length} paper{papers.length !== 1 ? 's' : ''} available
+          </p>
           {papers.map((paper) => (
             <div
               key={paper.id}
-              className="bg-white rounded-2xl border border-[#E8E4DC] p-5 shadow-sm hover:shadow-md hover:border-teal-100 transition-all"
+              className={cn(
+                'bg-white rounded-2xl border p-5 shadow-sm transition-all',
+                previewPaper?.id === paper.id
+                  ? 'border-teal-300 ring-1 ring-teal-200'
+                  : 'border-[#E8E4DC] hover:border-teal-100 hover:shadow-md'
+              )}
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-[#1e2d3d] text-sm leading-snug mb-1">{paper.title}</p>
-                  <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
+                  <p className="font-semibold text-[#1e2d3d] text-sm leading-snug mb-2">{paper.title}</p>
+                  <div className="flex items-center gap-3 text-xs text-slate-400">
                     <span>Sem {paper.semester}</span>
                     <span>·</span>
                     <span>{paper.year}</span>
@@ -189,10 +311,22 @@ export default function SubjectPapersPage() {
                   </button>
                   <button
                     onClick={() => handleDownload(paper)}
-                    className="flex items-center gap-1.5 bg-teal-600 text-white px-4 py-2 rounded-xl text-xs font-semibold hover:bg-teal-700 transition-colors"
+                    className="p-2 rounded-xl border border-[#E8E4DC] text-slate-400 hover:text-teal-600 hover:border-teal-200 transition-colors bg-white"
+                    title="Download"
                   >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    Open
+                    <Download className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleOpen(paper)}
+                    className={cn(
+                      'flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-colors',
+                      previewPaper?.id === paper.id
+                        ? 'bg-teal-700 text-white'
+                        : 'bg-teal-600 text-white hover:bg-teal-700'
+                    )}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    {previewPaper?.id === paper.id ? 'Viewing' : 'Open'}
                   </button>
                 </div>
               </div>
