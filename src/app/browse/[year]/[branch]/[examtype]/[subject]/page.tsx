@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronRight, Home, Download, ExternalLink, Bookmark, BookmarkCheck, Loader2, X, FileText, Eye } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { YEAR_INFO, getSubjectCode } from '@/lib/mit-data'
+import { YEAR_INFO, CYCLES, getCycleForBranch, getSubjectCode, subjectSlug as toSlug } from '@/lib/mit-data'
 import type { Paper } from '@/lib/supabase/types'
 import { cn, examTypeBadge, branchColor } from '@/lib/utils'
 
@@ -114,14 +114,20 @@ function PDFPreviewPanel({
 export default function SubjectPapersPage() {
   const params = useParams()
   const yg = Number(params.year)
-  const branch = (params.branch as string).toUpperCase()
+  const branchParam = params.branch as string
   const examTypeRaw = params.examtype as string
-  const subjectSlug = params.subject as string
+  const subjectSlugParam = params.subject as string
 
   const examType = examTypeRaw === 'end-sem' ? 'End-Sem' : 'Mid-Sem'
+  const cycle = getCycleForBranch(branchParam)
+
+  // Find the human-readable subject name from cycle definition
+  const cycleSubjectName = cycle
+    ? CYCLES[cycle].subjects.find((s) => toSlug(s.name) === subjectSlugParam)?.name ?? ''
+    : ''
 
   const [papers, setPapers] = useState<Paper[]>([])
-  const [subject, setSubject] = useState('')
+  const [subject, setSubject] = useState(cycleSubjectName)
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
   const [bookmarked, setBookmarked] = useState<Record<string, boolean>>({})
@@ -141,18 +147,24 @@ export default function SubjectPapersPage() {
       const uid = authData?.user?.id ?? null
       setUserId(uid)
 
-      const { data } = await db
+      let query = db
         .from('papers')
         .select('*')
-        .eq('branch', branch)
         .eq('exam_type', examType)
         .in('semester', semRange)
         .order('year', { ascending: false })
 
+      // For cycle-based routes, filter by subject name; otherwise filter by branch
+      if (!cycle) {
+        query = query.eq('branch', branchParam.toUpperCase())
+      }
+
+      const { data } = await query
+
       if (data) {
         const matched = (data as Paper[]).filter((p) => {
-          const s = p.subject.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
-          return s === subjectSlug
+          const s = toSlug(p.subject)
+          return s === subjectSlugParam
         })
         setPapers(matched)
         if (matched.length > 0) setSubject(matched[0].subject)
@@ -174,7 +186,7 @@ export default function SubjectPapersPage() {
       setLoading(false)
     }
     load()
-  }, [yg, branch, examType, subjectSlug])
+  }, [yg, branchParam, cycle, examType, subjectSlugParam])
 
   const handleOpen = (paper: Paper) => {
     setPreviewPaper(paper)
@@ -223,7 +235,9 @@ export default function SubjectPapersPage() {
         <ChevronRight className="w-3 h-3" />
         <Link href={`/browse/${yg}`} className="hover:text-teal-600">{info?.label}</Link>
         <ChevronRight className="w-3 h-3" />
-        <Link href={`/browse/${yg}/${branch.toLowerCase()}`} className="hover:text-teal-600">{branch}</Link>
+        <Link href={`/browse/${yg}/${branchParam}`} className="hover:text-teal-600">
+          {cycle ? CYCLES[cycle].label : branchParam.toUpperCase()}
+        </Link>
         <ChevronRight className="w-3 h-3" />
         <span className="text-slate-700 font-medium">{code}</span>
       </nav>
@@ -231,10 +245,23 @@ export default function SubjectPapersPage() {
       {/* Subject header */}
       <div className="mb-8">
         <div className="flex items-center gap-2 flex-wrap mb-1">
-          <span className="text-2xl font-extrabold text-teal-700">{code}</span>
-          <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full border', branchColor(branch))}>
-            {branch}
+          <span className={cn('text-2xl font-extrabold', cycle === 'physics' ? 'text-blue-600' : cycle === 'chemistry' ? 'text-emerald-700' : 'text-teal-700')}>
+            {code}
           </span>
+          {cycle ? (
+            <span className={cn(
+              'text-xs font-semibold px-2 py-0.5 rounded-full border',
+              cycle === 'physics'
+                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            )}>
+              {CYCLES[cycle].label}
+            </span>
+          ) : (
+            <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full border', branchColor(branchParam))}>
+              {branchParam.toUpperCase()}
+            </span>
+          )}
           <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full border', examTypeBadge(examType))}>
             {examType}
           </span>
@@ -259,8 +286,8 @@ export default function SubjectPapersPage() {
         <div className="text-center py-16">
           <p className="text-4xl mb-3">📭</p>
           <p className="text-slate-500 font-medium">No papers found for this subject.</p>
-          <Link href={`/browse/${yg}/${branch.toLowerCase()}`} className="mt-3 text-sm text-teal-600 hover:text-teal-700 font-medium block">
-            ← Back to {branch} subjects
+          <Link href={`/browse/${yg}/${branchParam}`} className="mt-3 text-sm text-teal-600 hover:text-teal-700 font-medium block">
+            ← Back to {cycle ? CYCLES[cycle].label : branchParam.toUpperCase()} subjects
           </Link>
         </div>
       ) : (

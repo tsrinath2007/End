@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Search, ArrowRight, BookOpen, ChevronRight } from 'lucide-react'
+import { Search, ArrowRight, BookOpen, ChevronRight, Construction } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { yearGroup, YEAR_INFO } from '@/lib/mit-data'
 import type { Paper } from '@/lib/supabase/types'
@@ -88,10 +88,31 @@ export default function HomePage() {
 
       {/* Year cards — primary navigation */}
       <section className="max-w-4xl mx-auto px-4 pb-16">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-          {[1, 2, 3].map((yg) => {
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {[1, 2, 3, 4].map((yg) => {
             const info = YEAR_INFO[yg]
             const stats = yearStats[yg]
+            const isUnderUpdate = info.underUpdate
+
+            if (isUnderUpdate) {
+              return (
+                <Link
+                  key={yg}
+                  href={`/browse/${yg}`}
+                  className="group relative bg-white rounded-2xl border border-[#E8E4DC] p-6 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden opacity-80 hover:opacity-100"
+                >
+                  <div className="absolute top-0 right-0 w-20 h-20 bg-amber-50 rounded-bl-[2.5rem] opacity-60" />
+                  <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-2">{info.sems}</p>
+                  <h2 className="text-2xl font-extrabold text-[#1e2d3d] mb-1">{info.label}</h2>
+                  <p className="text-xs text-slate-400 font-medium mb-4">{info.branches}</p>
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <Construction className="w-3 h-3 text-amber-500" />
+                    <span className="text-xs font-semibold text-amber-600">Under Update by SES</span>
+                  </div>
+                </Link>
+              )
+            }
+
             return (
               <Link
                 key={yg}
@@ -104,7 +125,7 @@ export default function HomePage() {
                 <p className="text-xs text-slate-400 font-medium mb-4">{info.branches}</p>
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold text-slate-600">
-                    {loading ? '—' : `${stats.count} papers`}
+                    {loading ? '—' : `${stats?.count ?? 0} papers`}
                   </span>
                   <ChevronRight className="w-4 h-4 text-teal-500 group-hover:translate-x-0.5 transition-transform" />
                 </div>
