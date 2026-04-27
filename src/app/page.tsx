@@ -2,158 +2,138 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Search, Download, BookOpen, Layers, ArrowRight, TrendingUp, Loader2 } from 'lucide-react'
-import PaperCard from '@/components/PaperCard'
-import { subjectTiles } from '@/lib/seed-data'
+import { Search, ArrowRight, BookOpen, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { yearGroup, YEAR_INFO } from '@/lib/mit-data'
 import type { Paper } from '@/lib/supabase/types'
+
+type YearStats = {
+  count: number
+  branches: Set<string>
+}
 
 export default function HomePage() {
   const router = useRouter()
   const [query, setQuery] = useState('')
-  const [papers, setPapers] = useState<Paper[]>([])
+  const [yearStats, setYearStats] = useState<Record<number, YearStats>>({
+    1: { count: 0, branches: new Set() },
+    2: { count: 0, branches: new Set() },
+    3: { count: 0, branches: new Set() },
+  })
+  const [totalPapers, setTotalPapers] = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    async function fetchPapers() {
+    async function load() {
       const supabase = createClient()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase as any)
-        .from('papers')
-        .select('*')
-        .order('created_at', { ascending: false })
-      if (!error && data) setPapers(data as Paper[])
+      const { data } = await (supabase as any).from('papers').select('semester, branch')
+      if (data) {
+        setTotalPapers((data as Paper[]).length)
+        const stats: Record<number, YearStats> = {
+          1: { count: 0, branches: new Set() },
+          2: { count: 0, branches: new Set() },
+          3: { count: 0, branches: new Set() },
+        }
+        ;(data as { semester: number; branch: string }[]).forEach((p) => {
+          const yg = yearGroup(p.semester)
+          if (yg >= 1 && yg <= 3) {
+            stats[yg].count++
+            stats[yg].branches.add(p.branch)
+          }
+        })
+        setYearStats(stats)
+      }
       setLoading(false)
     }
-    fetchPapers()
+    load()
   }, [])
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     if (query.trim()) router.push(`/explore?q=${encodeURIComponent(query.trim())}`)
-    else router.push('/explore')
+    else router.push('/browse')
   }
-
-  const recentPapers = papers.slice(0, 6)
-  const totalSubjects = new Set(papers.map((p) => p.subject)).size
-  const totalBranches = new Set(papers.map((p) => p.branch)).size
-  const totalDownloads = papers.reduce((a, p) => a + p.download_count, 0)
 
   return (
     <div className="min-h-screen">
       {/* Hero */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-[#FAF7F2] via-[#F0FDF4] to-[#FAF7F2] py-20 px-4">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-teal-100/40 via-transparent to-transparent pointer-events-none" />
-        <div className="max-w-3xl mx-auto text-center relative">
-          <div className="inline-flex items-center gap-2 bg-teal-50 border border-teal-200 text-teal-700 text-xs font-semibold px-3 py-1.5 rounded-full mb-6">
-            <TrendingUp className="w-3 h-3" />
-            {totalDownloads.toLocaleString()}+ downloads this semester
-          </div>
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-[#1e2d3d] leading-tight mb-4">
-            Find your paper.
-            <span className="text-teal-600 block">Ace your exam.</span>
-          </h1>
-          <p className="text-slate-500 text-lg mb-8 max-w-xl mx-auto">
-            Browse, preview, and download past question papers across all branches and semesters — free, always.
-          </p>
+      <section className="max-w-2xl mx-auto px-4 pt-16 pb-10 text-center">
+        <h1 className="text-4xl sm:text-5xl font-extrabold text-[#1e2d3d] leading-tight tracking-tight mb-4">
+          Every past paper,<br />
+          <span className="text-teal-600">up to year 3.</span>
+        </h1>
+        <p className="text-slate-500 text-base sm:text-lg max-w-xl mx-auto mb-8 leading-relaxed">
+          Mid-sem and end-sem question papers for all branches at MIT Bengaluru —
+          organised by year, semester, and subject.
+        </p>
 
-          <form onSubmit={handleSearch} className="flex items-center bg-white rounded-2xl shadow-lg border border-[#E8E4DC] overflow-hidden max-w-xl mx-auto">
-            <Search className="ml-4 w-5 h-5 text-slate-400 flex-shrink-0" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by subject, branch, exam type..."
-              className="flex-1 px-3 py-4 text-sm outline-none bg-transparent text-[#1e2d3d] placeholder-slate-400"
-            />
-            <button type="submit" className="m-1.5 bg-teal-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors">
-              Search
-            </button>
-          </form>
-        </div>
+        {/* Search bar */}
+        <form onSubmit={handleSearch} className="flex items-center bg-white rounded-2xl shadow-md border border-[#E8E4DC] overflow-hidden max-w-lg mx-auto mb-4">
+          <Search className="ml-4 w-4 h-4 text-slate-400 flex-shrink-0" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search subjects, codes..."
+            className="flex-1 px-3 py-3.5 text-sm outline-none bg-transparent text-[#1e2d3d] placeholder-slate-400"
+          />
+          <button type="submit" className="m-1.5 bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors">
+            Search
+          </button>
+        </form>
+        <Link href="/browse" className="text-sm text-teal-600 hover:text-teal-700 font-medium">
+          Or search across all papers →
+        </Link>
       </section>
 
-      {/* Stats bar */}
-      <section className="bg-white border-y border-[#E8E4DC]">
-        <div className="max-w-5xl mx-auto px-4 py-5 flex flex-col sm:flex-row items-center justify-center gap-8 sm:gap-16">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center">
-              <BookOpen className="w-5 h-5 text-teal-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-[#1e2d3d]">{loading ? '—' : `${papers.length}+`}</p>
-              <p className="text-xs text-slate-500 font-medium">Total Papers</p>
-            </div>
-          </div>
-          <div className="hidden sm:block w-px h-10 bg-[#E8E4DC]" />
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-              <Layers className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-[#1e2d3d]">{loading ? '—' : totalSubjects}</p>
-              <p className="text-xs text-slate-500 font-medium">Subjects</p>
-            </div>
-          </div>
-          <div className="hidden sm:block w-px h-10 bg-[#E8E4DC]" />
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center">
-              <Download className="w-5 h-5 text-orange-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-[#1e2d3d]">{loading ? '—' : totalBranches}</p>
-              <p className="text-xs text-slate-500 font-medium">Branches</p>
-            </div>
-          </div>
+      {/* Year cards — primary navigation */}
+      <section className="max-w-4xl mx-auto px-4 pb-16">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          {[1, 2, 3].map((yg) => {
+            const info = YEAR_INFO[yg]
+            const stats = yearStats[yg]
+            return (
+              <Link
+                key={yg}
+                href={`/browse/${yg}`}
+                className="group relative bg-white rounded-2xl border border-[#E8E4DC] p-6 shadow-sm hover:shadow-md hover:border-teal-200 transition-all duration-200 overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 w-24 h-24 bg-teal-50 rounded-bl-[3rem] opacity-60 group-hover:opacity-100 transition-opacity" />
+                <p className="text-xs font-bold text-teal-600 uppercase tracking-widest mb-2">{info.sems}</p>
+                <h2 className="text-2xl font-extrabold text-[#1e2d3d] mb-1">{info.label}</h2>
+                <p className="text-xs text-slate-400 font-medium mb-4">{info.branches}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-slate-600">
+                    {loading ? '—' : `${stats.count} papers`}
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-teal-500 group-hover:translate-x-0.5 transition-transform" />
+                </div>
+              </Link>
+            )
+          })}
         </div>
-      </section>
 
-      {/* Subject tiles */}
-      <section className="max-w-5xl mx-auto px-4 py-14">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-[#1e2d3d]">Browse by Subject</h2>
+        {/* Quick stats */}
+        <div className="bg-white rounded-2xl border border-[#E8E4DC] px-6 py-4 flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-teal-600" />
+            <span className="text-sm font-semibold text-[#1e2d3d]">
+              {loading ? '—' : totalPapers} papers total
+            </span>
+          </div>
           <Link href="/explore" className="text-sm text-teal-600 hover:text-teal-700 font-medium flex items-center gap-1">
-            View all <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {subjectTiles.map((tile) => (
-            <Link
-              key={tile.name}
-              href={`/explore?subject=${encodeURIComponent(tile.name)}`}
-              className="group bg-white rounded-2xl border border-[#E8E4DC] p-4 text-center hover:border-teal-200 hover:shadow-md transition-all duration-200"
-            >
-              <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${tile.color} mx-auto mb-3 flex items-center justify-center text-white text-xl shadow-sm group-hover:scale-105 transition-transform`}>
-                {tile.icon}
-              </div>
-              <p className="text-xs font-semibold text-[#1e2d3d] leading-tight">{tile.name}</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">{tile.branch}</p>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      {/* Recent papers */}
-      <section className="max-w-5xl mx-auto px-4 pb-16">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-[#1e2d3d]">Recently Added</h2>
-          <Link href="/explore?sort=newest" className="text-sm text-teal-600 hover:text-teal-700 font-medium flex items-center gap-1">
-            See all <ArrowRight className="w-3.5 h-3.5" />
+            Advanced search & filters <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-6 h-6 text-teal-600 animate-spin" />
-          </div>
-        ) : recentPapers.length === 0 ? (
-          <div className="text-center py-12 text-slate-400">No papers yet.</div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {recentPapers.map((paper) => (
-              <PaperCard key={paper.id} paper={paper} />
-            ))}
-          </div>
-        )}
+        {/* Credits */}
+        <p className="text-center text-xs text-slate-400 mt-8">
+          Papers sourced from{' '}
+          <a href="https://github.com/Magniquick/mit-question-bank" target="_blank" rel="noopener" className="hover:text-teal-600 underline">
+            mit-question-bank
+          </a>
+          {' '}· Independent student project · Not affiliated with MAHE
+        </p>
       </section>
     </div>
   )

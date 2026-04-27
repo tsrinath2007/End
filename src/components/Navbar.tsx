@@ -50,7 +50,8 @@ export default function Navbar() {
   }
 
   const navLinks = [
-    { href: '/explore', label: 'Explore' },
+    { href: '/browse', label: 'Browse' },
+    { href: '/explore', label: 'Search' },
     ...(isAdmin ? [{ href: '/admin', label: 'Admin' }] : []),
   ]
 
