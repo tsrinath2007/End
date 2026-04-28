@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import Navbar from '@/components/Navbar'
+import ErrorBoundary from '@/components/ErrorBoundary'
 
 export const metadata: Metadata = {
   title: 'PaperVault — Question Paper Archive',
@@ -15,8 +16,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen bg-[#FAF7F2] text-[#1e2d3d] antialiased">
-        <Navbar />
-        <main>{children}</main>
+        <ErrorBoundary>
+          <Navbar />
+          <main>{children}</main>
+        </ErrorBoundary>
       </body>
     </html>
   )
